@@ -1,0 +1,10 @@
+{
+  "description": "This e-learning platform offers a comprehensive solution for students, teachers, and administrators to manage courses, quizzes, and user interactions efficiently.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
