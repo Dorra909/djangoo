@@ -1,6 +1,7 @@
 from django.db import models, transaction
 from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -20,32 +21,11 @@ from courses.serializers import (
 )
 from progress.models import LessonProgress
 from progress.serializers import CourseProgressSerializer
+from progress.services import get_course_progress
 
 
 class IsCourseOwnerOrAdmin(IsOwnerOrAdmin):
     owner_field = "teacher"
-
-
-def course_progress(student, course):
-    total = course.lessons.count()
-    completed = LessonProgress.objects.filter(
-        student=student,
-        course=course,
-    ).count()
-    latest = (
-        LessonProgress.objects.filter(student=student, course=course)
-        .order_by("-last_accessed")
-        .values_list("last_accessed", flat=True)
-        .first()
-    )
-    return {
-        "courseId": course.id,
-        "courseTitle": course.title,
-        "completedLessons": completed,
-        "totalLessons": total,
-        "percentage": round(completed * 100 / total) if total else 0,
-        "lastAccessed": latest,
-    }
 
 
 def optimized_courses():
@@ -196,9 +176,12 @@ class CompleteLessonView(APIView):
         if not Enrollment.objects.filter(student=request.user, course=course).exists():
             raise PermissionDenied("Enroll in this course before completing lessons.")
         lesson = get_object_or_404(Lesson, pk=lesson_id, course=course)
-        LessonProgress.objects.get_or_create(
+        progress, created = LessonProgress.objects.get_or_create(
             student=request.user,
             course=course,
             lesson=lesson,
         )
-        return Response(course_progress(request.user, course))
+        if not created:
+            progress.last_accessed = timezone.now()
+            progress.save(update_fields=["last_accessed"])
+        return Response(get_course_progress(request.user, course))
