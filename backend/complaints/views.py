@@ -1,10 +1,10 @@
 from rest_framework import status, viewsets
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from accounts.models import User
-from accounts.permissions import IsAdmin
+from accounts.permissions import IsAdmin, IsTeacherOrStudent
 from complaints.models import Complaint
 from complaints.serializers import (
     ComplaintAdminUpdateSerializer,
@@ -79,13 +79,4 @@ class ComplaintViewSet(viewsets.ModelViewSet):
                 complaint,
                 context={"request": request},
             ).data
-        )
-
-
-class IsTeacherOrStudent(BasePermission):
-    def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and request.user.role in (User.Role.TEACHER, User.Role.STUDENT)
         )

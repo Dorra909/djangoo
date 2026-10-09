@@ -99,6 +99,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_CREDENTIALS = True
+LLM_API_KEY = env("LLM_API_KEY", default="")
+LLM_API_URL = env(
+    "LLM_API_URL",
+    default="https://api.openai.com/v1/chat/completions",
+)
+LLM_MODEL = env("LLM_MODEL", default="gpt-4o-mini")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -136,4 +142,8 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "REST API for the EduLearn e-learning platform.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "UserRoleEnum": "accounts.models.User.Role",
+        "ChatMessageRoleEnum": "chatbot.models.ChatMessage.Role",
+    },
 }
