@@ -1,7 +1,7 @@
 # Implementation checklist
 
 - [ ] Phase 1 — Scaffold Django, implement custom email user and JWT authentication, admin user management and auth tests.
-- [ ] Phase 2 — Implement courses, nested lessons, publishing, enrollment and lesson completion.
+- [x] Phase 2 — Implement courses, nested lessons, publishing, enrollment and lesson completion.
 - [ ] Phase 3 — Implement quizzes, safe student reads, server-side grading, results and CSV export.
 - [ ] Phase 4 — Implement progress and role-specific dashboards.
 - [ ] Phase 5 — Implement complaints, attachment validation and notifications.
