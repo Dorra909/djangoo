@@ -148,7 +148,7 @@ Nested course/lesson writes and lesson reordering run atomically. Upload URLs ar
 | GET | `/attempts/mine/` | ETUDIANT | Optional quiz filter, pagination | Paginated own `QuizAttempt[]` |
 | GET | `/quizzes/{id}/attempts/` | Owning ENSEIGNANT or ADMIN | Pagination | Paginated attempts scoped to that quiz and teacher ownership |
 | GET | `/quizzes/{id}/results/` | Owning ENSEIGNANT or ADMIN | — | `{attemptCount,averageScore,passRate,distribution:[{range,count}],attempts:[...]}` |
-| GET | `/quizzes/{id}/results.csv` | Owning ENSEIGNANT or ADMIN | — | CSV attachment |
+| GET | `/quizzes/{id}/results-csv/` | Owning ENSEIGNANT or ADMIN | — | CSV attachment |
 
 Question-choice validation requires at least one correct choice per question; `TRUE_FALSE` has two fixed choices. Nested quiz writes and grading/submission use database transactions. Students never receive `is_correct` or `correctAnswer` before submit. Student attempt queries are always scoped to the current account; teacher queries are scoped to their own quizzes.
 
