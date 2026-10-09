@@ -11,6 +11,9 @@ STATUS_TO_FRONTEND = {
 STATUS_FROM_FRONTEND = {
     frontend: backend for backend, frontend in STATUS_TO_FRONTEND.items()
 }
+FRONTEND_STATUS_CHOICES = tuple(
+    (frontend, frontend) for frontend in STATUS_FROM_FRONTEND
+)
 
 
 class ComplaintReadSerializer(serializers.ModelSerializer):
@@ -41,3 +44,32 @@ class ComplaintReadSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj) -> str:
         return STATUS_TO_FRONTEND[obj.status]
+
+
+class ComplaintCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Complaint
+        fields = ("subject", "category", "message", "attachment")
+
+    def validate_attachment(self, upload):
+        if upload is None:
+            return upload
+        from core.validators import validate_attachment
+
+        return validate_attachment(upload)
+
+
+class ComplaintAdminUpdateSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(choices=FRONTEND_STATUS_CHOICES)
+    adminReply = serializers.CharField(
+        source="admin_reply",
+        required=False,
+        allow_blank=True,
+    )
+
+    class Meta:
+        model = Complaint
+        fields = ("status", "adminReply")
+
+    def validate_status(self, value):
+        return STATUS_FROM_FRONTEND[value]

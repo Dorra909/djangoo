@@ -4,7 +4,7 @@
 - [x] Phase 2 — Implement courses, nested lessons, publishing, enrollment and lesson completion.
 - [x] Phase 3 — Implement quizzes, safe student reads, server-side grading, results and CSV export.
 - [x] Phase 4 — Implement progress and role-specific dashboards.
-- [ ] Phase 5 — Implement complaints, attachment validation and notifications.
+- [x] Phase 5 — Implement complaints, attachment validation and notifications.
 - [ ] Phase 6 — Implement chatbot sessions, history and provider-agnostic replies.
 - [ ] Phase 7 — Seed demo data, connect frontend, run backend and frontend tests, browser verification and final documentation.
 
