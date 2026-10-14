@@ -11,8 +11,8 @@ export function StudentProgress() {
   const { user } = useAuth();
   const [tab, setTab] = useState<'courses' | 'quizzes'>('courses');
 
-  const { data: progress = [] } = useQuery({ queryKey: ['my-progress', user?.id], queryFn: () => progressApi.getByStudent(user!.id) });
-  const { data: attempts = [] } = useQuery({ queryKey: ['my-attempts', user?.id], queryFn: () => quizzesApi.getAttempts(undefined, user!.id) });
+  const { data: progress = [], isLoading: progressLoading, error: progressError } = useQuery({ queryKey: ['my-progress', user?.id], queryFn: () => progressApi.getByStudent(user!.id) });
+  const { data: attempts = [], isLoading: attemptsLoading, error: attemptsError } = useQuery({ queryKey: ['my-attempts', user?.id], queryFn: () => quizzesApi.getAttempts(undefined, user!.id) });
 
   const scoreHistory = attempts.map((a, i) => ({ index: `T${i + 1}`, score: a.score, name: a.quizTitle }));
   const avgScore = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) : 0;
@@ -33,9 +33,12 @@ export function StudentProgress() {
         ))}
       </div>
 
+      {(progressError || attemptsError) && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger votre progression.</div>}
       {tab === 'courses' ? (
         <div className="space-y-4">
-          {progress.length === 0 ? (
+          {progressLoading ? (
+            <div className="py-12 text-center text-sm text-slate-400">Chargement...</div>
+          ) : progress.length === 0 ? (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center text-sm text-slate-400">
               Commencez un cours pour voir votre progression
             </div>
@@ -51,7 +54,7 @@ export function StudentProgress() {
                 <ProgressBar value={p.percentage} color={p.percentage === 100 ? 'emerald' : 'indigo'} />
                 <div className="flex justify-between mt-2 text-[10px] text-slate-500">
                   <span>{p.completedLessons} / {p.totalLessons} leçons complétées</span>
-                  <span>Dernière activité: {new Date(p.lastAccessed).toLocaleDateString('fr-FR')}</span>
+                  <span>Dernière activité: {p.lastAccessed ? new Date(p.lastAccessed).toLocaleDateString('fr-FR') : 'Aucune activité'}</span>
                 </div>
               </div>
             ))
@@ -74,7 +77,9 @@ export function StudentProgress() {
             </div>
           </div>
 
-          {attempts.length > 0 && (
+          {attemptsLoading ? (
+            <div className="py-12 text-center text-sm text-slate-400">Chargement...</div>
+          ) : attempts.length > 0 && (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Évolution des scores</h3>
               <ResponsiveContainer width="100%" height={200}>

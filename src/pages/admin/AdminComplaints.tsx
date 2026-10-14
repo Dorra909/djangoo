@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { useToast } from '../../components/ui/Toast';
 import type { Complaint } from '../../types';
 import { useForm } from 'react-hook-form';
+import { apiErrorMessage } from '../../api/client';
 
 const statusColors: Record<string, 'red' | 'amber' | 'emerald'> = {
   'Open': 'red', 'In progress': 'amber', 'Resolved': 'emerald',
@@ -17,11 +18,12 @@ export function AdminComplaints() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: complaints = [], isLoading } = useQuery({ queryKey: ['complaints'], queryFn: complaintsApi.getAll });
+  const { data: complaints = [], isLoading, error } = useQuery({ queryKey: ['complaints'], queryFn: () => complaintsApi.getAll() });
   const updateMut = useMutation({
     mutationFn: ({ id, status, reply }: { id: number; status: Complaint['status']; reply?: string }) =>
       complaintsApi.updateStatus(id, status, reply),
     onSuccess: (updated) => { qc.invalidateQueries({ queryKey: ['complaints'] }); setSelected(updated); toast('success', 'Réclamation mise à jour'); },
+    onError: error => toast('error', apiErrorMessage(error)),
   });
 
   const { register, handleSubmit, reset } = useForm<{ reply: string; status: Complaint['status'] }>();
@@ -50,7 +52,9 @@ export function AdminComplaints() {
 
       <div className="grid lg:grid-cols-5 gap-4">
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-          {isLoading ? (
+          {error ? (
+            <div role="alert" className="p-8 text-center text-sm text-red-600">Impossible de charger les réclamations.</div>
+          ) : isLoading ? (
             <div className="p-8 text-center text-sm text-slate-400">Chargement...</div>
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-400">Aucune réclamation</div>
@@ -85,6 +89,7 @@ export function AdminComplaints() {
             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
               {selected.message}
             </div>
+            {selected.attachment && <a href={selected.attachment} target="_blank" rel="noreferrer" className="inline-block mb-4 text-xs text-indigo-600 hover:underline">Télécharger la pièce jointe</a>}
             <form onSubmit={handleSubmit(onUpdate)} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Statut</label>

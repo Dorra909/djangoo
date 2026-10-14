@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { apiErrorMessage } from '../../api/client';
 
 const statusColors: Record<string, 'red' | 'amber' | 'emerald'> = { 'Open': 'red', 'In progress': 'amber', 'Resolved': 'emerald' };
 
@@ -16,6 +17,7 @@ const schema = z.object({
   subject: z.string().min(3, 'Sujet requis'),
   category: z.enum(['Technique', 'Pédagogie', 'Fonctionnalité', 'Autre']),
   message: z.string().min(10, 'Message requis (min 10 caractères)'),
+  attachment: z.custom<FileList>().optional(),
 });
 type Form = z.infer<typeof schema>;
 
@@ -25,10 +27,16 @@ export function TeacherComplaints() {
   const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
 
-  const { data: complaints = [] } = useQuery({ queryKey: ['my-complaints', user?.id], queryFn: () => complaintsApi.getByAuthor(user!.id) });
+  const { data: complaints = [], isLoading, error } = useQuery({ queryKey: ['my-complaints', user?.id], queryFn: () => complaintsApi.getByAuthor(user!.id) });
   const createMut = useMutation({
-    mutationFn: (data: Form) => complaintsApi.create({ ...data, authorId: user!.id, authorName: user!.fullName, authorRole: user!.role }),
+    mutationFn: (data: Form) => complaintsApi.create({
+      subject: data.subject,
+      category: data.category,
+      message: data.message,
+      attachment: data.attachment?.[0],
+    }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['my-complaints'] }); toast('success', 'Réclamation envoyée'); setModalOpen(false); reset(); },
+    onError: error => toast('error', apiErrorMessage(error)),
   });
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Form>({ resolver: zodResolver(schema) });
@@ -45,7 +53,11 @@ export function TeacherComplaints() {
         </button>
       </div>
 
-      {complaints.length === 0 ? (
+      {error ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger vos réclamations.</div>
+      ) : isLoading ? (
+        <div className="py-12 text-center text-sm text-slate-400">Chargement...</div>
+      ) : complaints.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
           <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-3" />
           <p className="text-sm text-slate-400">Aucune réclamation pour le moment</p>
@@ -99,9 +111,13 @@ export function TeacherComplaints() {
             <textarea {...register('message')} rows={5} className="w-full px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white resize-none" />
             {errors.message && <p className="text-red-500 text-[10px] mt-1">{errors.message.message}</p>}
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Pièce jointe (PDF, PNG ou JPEG, 5 Mo max.)</label>
+            <input {...register('attachment')} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="w-full text-xs text-slate-600 dark:text-slate-300" />
+          </div>
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={() => { setModalOpen(false); reset(); }} className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700">Annuler</button>
-            <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-60">Envoyer</button>
+            <button type="submit" disabled={isSubmitting || createMut.isPending} className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-60">{createMut.isPending ? 'Envoi...' : 'Envoyer'}</button>
           </div>
         </form>
       </Modal>

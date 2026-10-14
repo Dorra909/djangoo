@@ -22,14 +22,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('auth');
     if (stored) {
       try {
-        const { user, tokens } = JSON.parse(stored);
-        setUser(user);
+        const { tokens } = JSON.parse(stored);
         setTokens(tokens);
+        authApi.me().then(user => {
+          setUser(user);
+          localStorage.setItem('auth', JSON.stringify({ user, tokens: JSON.parse(localStorage.getItem('auth') || '{}').tokens }));
+        }).catch(() => {
+          localStorage.removeItem('auth');
+          setTokens(null);
+        }).finally(() => setIsLoading(false));
       } catch {
         localStorage.removeItem('auth');
+        setIsLoading(false);
       }
+    } else {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -40,10 +48,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = useCallback(() => {
+    const refresh = tokens?.refresh;
+    const access = tokens?.access;
     setUser(null);
     setTokens(null);
     localStorage.removeItem('auth');
-  }, []);
+    if (refresh && access) {
+      authApi.logout(refresh, access).catch(error => {
+        console.warn('The server logout request failed after local sign-out.', error);
+      });
+    }
+  }, [tokens]);
 
   const updateUser = (updated: User) => {
     setUser(updated);

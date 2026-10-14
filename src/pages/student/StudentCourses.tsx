@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiErrorMessage } from '../../api/client';
 
 const levels = ['Tous', 'Débutant', 'Intermédiaire', 'Avancé'] as const;
 const categories = ['Toutes', 'Développement Web', 'Data Science', 'Design', 'Backend', 'Mobile'];
@@ -21,10 +22,22 @@ export function StudentCourses() {
   const [category, setCategory] = useState('Toutes');
   const [tab, setTab] = useState<'all' | 'mine'>('all');
 
-  const { data: courses = [], isLoading } = useQuery({ queryKey: ['courses'], queryFn: coursesApi.getAll });
+  const { data: courses = [], isLoading, error: coursesError } = useQuery({ queryKey: ['courses'], queryFn: coursesApi.getAll });
   const { data: progress = [] } = useQuery({ queryKey: ['my-progress', user?.id], queryFn: () => progressApi.getByStudent(user!.id) });
+  const { data: enrolledCourseIds = [], error } = useQuery({ queryKey: ['my-enrollments'], queryFn: coursesApi.getMyEnrollments });
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const enrollMut = useMutation({
+    mutationFn: coursesApi.enroll,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-enrollments'] });
+      qc.invalidateQueries({ queryKey: ['my-progress'] });
+      toast('success', 'Inscription au cours confirmée');
+    },
+    onError: err => toast('error', apiErrorMessage(err)),
+  });
 
-  const myCourseIds = progress.map(p => p.courseId);
+  const myCourseIds = enrolledCourseIds;
 
   const filtered = courses.filter(c => {
     if (tab === 'mine' && !myCourseIds.includes(c.id)) return false;
@@ -66,6 +79,8 @@ export function StudentCourses() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {Array.from({length:6}).map((_,i) => <div key={i} className="h-64 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />)}
         </div>
+      ) : error || coursesError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger vos inscriptions.</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-sm text-slate-400">Aucun cours trouvé</div>
       ) : (
@@ -83,7 +98,13 @@ export function StudentCourses() {
                       <ProgressBar value={p.percentage} size="sm" showPercent />
                       <p className="text-[10px] text-slate-500 mt-1">{p.completedLessons}/{p.totalLessons} leçons</p>
                     </div>
-                  ) : undefined
+                  ) : enrolledCourseIds.includes(c.id) ? (
+                    <span className="text-xs text-emerald-600 font-medium">Inscrit</span>
+                  ) : (
+                    <button onClick={event => { event.preventDefault(); enrollMut.mutate(c.id); }} disabled={enrollMut.isPending} className="w-full py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60">
+                      {enrollMut.isPending ? 'Inscription...' : 'S’inscrire'}
+                    </button>
+                  )
                 }
               />
             );
@@ -101,16 +122,29 @@ export function StudentCourseDetail() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: course, isLoading } = useQuery({ queryKey: ['course', id], queryFn: () => coursesApi.getById(Number(id)) });
+  const { data: course, isLoading, error } = useQuery({ queryKey: ['course', id], queryFn: () => coursesApi.getById(Number(id)) });
   const { data: progress = [] } = useQuery({ queryKey: ['my-progress', user?.id], queryFn: () => progressApi.getByStudent(user!.id) });
+  const { data: enrolledCourseIds = [] } = useQuery({ queryKey: ['my-enrollments'], queryFn: coursesApi.getMyEnrollments });
+  const isEnrolled = enrolledCourseIds.includes(Number(id));
+  const enrollMut = useMutation({
+    mutationFn: () => coursesApi.enroll(Number(id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-enrollments'] });
+      qc.invalidateQueries({ queryKey: ['my-progress'] });
+      toast('success', 'Inscription au cours confirmée');
+    },
+    onError: err => toast('error', apiErrorMessage(err)),
+  });
 
   const myProgress = progress.find(p => p.courseId === Number(id));
   const markMut = useMutation({
     mutationFn: ({ lessonId }: { lessonId: number }) => progressApi.markLessonComplete(Number(id), lessonId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['my-progress'] }); toast('success', 'Leçon marquée comme complétée !'); },
+    onError: err => toast('error', apiErrorMessage(err)),
   });
 
   if (isLoading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" /></div>;
+  if (error) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger le cours.</div>;
   if (!course) return <div className="text-center py-12 text-slate-400">Cours non trouvé</div>;
 
   return (
@@ -150,13 +184,13 @@ export function StudentCourseDetail() {
                   </div>
                   {lesson.videoUrl && <PlayCircle className="w-4 h-4 text-indigo-400 shrink-0" />}
                   {myProgress && myProgress.completedLessons > i && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />}
-                  <button
+                  {isEnrolled && <button
                     onClick={() => markMut.mutate({ lessonId: lesson.id })}
                     disabled={markMut.isPending}
                     className="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50"
                   >
                     Suivre
-                  </button>
+                  </button>}
                 </div>
               ))}
             </div>
@@ -166,7 +200,14 @@ export function StudentCourseDetail() {
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Ma progression</h3>
-            {myProgress ? (
+            {!isEnrolled ? (
+              <div className="text-center py-3">
+                <p className="text-xs text-slate-400 mb-3">Inscrivez-vous pour commencer ce cours.</p>
+                <button onClick={() => enrollMut.mutate()} disabled={enrollMut.isPending} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl disabled:opacity-60">
+                  {enrollMut.isPending ? 'Inscription...' : 'S’inscrire'}
+                </button>
+              </div>
+            ) : myProgress ? (
               <>
                 <ProgressBar value={myProgress.percentage} />
                 <p className="text-xs text-slate-500 mt-2">{myProgress.completedLessons} / {myProgress.totalLessons} leçons complétées</p>
@@ -174,7 +215,7 @@ export function StudentCourseDetail() {
             ) : (
               <div className="text-center py-3">
                 <p className="text-xs text-slate-400 mb-3">Pas encore commencé</p>
-                <button onClick={() => markMut.mutate({ lessonId: course.lessons[0]?.id })} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors">
+                <button onClick={() => markMut.mutate({ lessonId: course.lessons[0]?.id })} disabled={!course.lessons[0] || markMut.isPending} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-60">
                   Commencer
                 </button>
               </div>

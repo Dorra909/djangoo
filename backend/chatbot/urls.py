@@ -1,6 +1,7 @@
 from django.urls import path
 
 from chatbot.views import (
+    ChatbotMessageView,
     ChatMessagesView,
     ChatSessionDeleteView,
     ChatSessionListCreateView,
@@ -8,6 +9,7 @@ from chatbot.views import (
 
 
 urlpatterns = [
+    path("message/", ChatbotMessageView.as_view(), name="chatbot-message"),
     path("sessions/", ChatSessionListCreateView.as_view(), name="chat-sessions"),
     path(
         "sessions/<int:session_id>/messages/",

@@ -142,6 +142,176 @@ def test_teacher_can_update_nested_quiz_questions(course, teacher):
 
 
 @pytest.mark.django_db
+def test_ai_short_answer_falls_back_to_teacher_review_on_provider_failure(
+    course,
+    teacher,
+    student,
+    settings,
+):
+    settings.GROQ_API_KEY = ""
+    payload = quiz_payload(course)
+    payload["gradingMode"] = "AI"
+    payload["questions"] = [
+        {
+            "text": "Explique la photosynthèse.",
+            "type": "short_answer",
+            "options": [],
+            "modelAnswer": "Les plantes convertissent la lumière en énergie chimique.",
+            "rubric": "Mentionner la lumière et la transformation en énergie.",
+            "points": 2,
+        }
+    ]
+    teacher_client = APIClient()
+    teacher_client.force_authenticate(teacher)
+    created = teacher_client.post("/api/quizzes/", payload, format="json")
+    Enrollment.objects.create(student=student, course=course)
+    student_client = APIClient()
+    student_client.force_authenticate(student)
+    started = student_client.post(
+        f"/api/quizzes/{created.data['id']}/attempts/",
+        {},
+        format="json",
+    )
+
+    assert "modelAnswer" not in started.data["questions"][0]
+    submitted = student_client.post(
+        f"/api/attempts/{started.data['id']}/submit/",
+        {
+            "answers": [],
+            "textAnswers": [
+                {
+                    "questionId": started.data["questions"][0]["id"],
+                    "textAnswer": "Les plantes utilisent le soleil.",
+                }
+            ],
+            "timeTaken": 2,
+        },
+        format="json",
+    )
+
+    assert created.status_code == 201
+    assert submitted.status_code == 200
+    assert submitted.data["needsReview"] is True
+    assert submitted.data["review"][0]["needsReview"] is True
+    assert submitted.data["review"][0]["textAnswer"] == "Les plantes utilisent le soleil."
+    assert "relecture par l'enseignant" in submitted.data["review"][0]["aiFeedback"]
+    assert QuizAttempt.objects.get().score == 0
+
+
+@pytest.mark.django_db
+def test_manual_grading_can_be_overridden_by_quiz_owner(
+    course,
+    teacher,
+    student,
+):
+    payload = quiz_payload(course)
+    payload["gradingMode"] = "MANUAL"
+    payload["questions"] = [
+        {
+            "text": "Quelle est la couleur du ciel ?",
+            "type": "multiple_choice",
+            "options": ["Bleu", "Vert"],
+            "correctAnswer": 0,
+            "points": 2,
+        }
+    ]
+    teacher_client = APIClient()
+    teacher_client.force_authenticate(teacher)
+    created = teacher_client.post("/api/quizzes/", payload, format="json")
+    quiz = Quiz.objects.get(pk=created.data["id"])
+    Enrollment.objects.create(student=student, course=course)
+    student_client = APIClient()
+    student_client.force_authenticate(student)
+    started = student_client.post(f"/api/quizzes/{quiz.id}/attempts/", {}, format="json")
+    submitted = student_client.post(
+        f"/api/quizzes/attempts/{started.data['id']}/submit/",
+        {"answers": [0], "timeTaken": 1},
+        format="json",
+    )
+
+    pending = teacher_client.get(f"/api/quizzes/{quiz.id}/attempts/pending/")
+
+    assert created.status_code == 201
+    assert submitted.data["needsReview"] is True
+    assert submitted.data["score"] == 0
+    assert pending.status_code == 200
+    assert len(pending.data) == 1
+    answer_id = quiz.attempts.get().attempt_answers.get().id
+    override = teacher_client.patch(
+        f"/api/attempts/{started.data['id']}/answers/{answer_id}/override/",
+        {"score": 2, "feedback": "Bonne réponse."},
+        format="json",
+    )
+
+    quiz.attempts.get().refresh_from_db()
+    assert override.status_code == 200
+    assert override.data["teacherOverrideScore"] == 2
+    assert override.data["needsReview"] is False
+    assert quiz.attempts.get().score == 100
+    assert quiz.attempts.get().needs_review is False
+
+
+@pytest.mark.django_db
+def test_ai_short_answer_uses_validated_provider_score(
+    course,
+    teacher,
+    student,
+    monkeypatch,
+    settings,
+):
+    settings.GROQ_API_KEY = "test-key"
+
+    class FakeGroq:
+        def chat(self, *args, **kwargs):
+            return '{"score": 1.5, "feedback": "Bonne explication."}'
+
+    monkeypatch.setattr("quizzes.grading.GroqClient", FakeGroq)
+    payload = quiz_payload(course)
+    payload["gradingMode"] = "AI"
+    payload["questions"] = [
+        {
+            "text": "Définis une variable.",
+            "type": "short_answer",
+            "options": [],
+            "modelAnswer": "Un espace nommé qui contient une valeur.",
+            "rubric": "Mentionner une valeur associée à un nom.",
+            "points": 2,
+        }
+    ]
+    teacher_client = APIClient()
+    teacher_client.force_authenticate(teacher)
+    created = teacher_client.post("/api/quizzes/", payload, format="json")
+    Enrollment.objects.create(student=student, course=course)
+    student_client = APIClient()
+    student_client.force_authenticate(student)
+    started = student_client.post(
+        f"/api/quizzes/{created.data['id']}/attempts/",
+        {},
+        format="json",
+    )
+    submitted = student_client.post(
+        f"/api/quizzes/attempts/{started.data['id']}/submit/",
+        {
+            "answers": [],
+            "textAnswers": [
+                {
+                    "questionId": started.data["questions"][0]["id"],
+                    "textAnswer": "Un nom qui référence une valeur.",
+                }
+            ],
+            "timeTaken": 1,
+        },
+        format="json",
+    )
+
+    assert submitted.status_code == 200
+    assert submitted.data["needsReview"] is False
+    assert submitted.data["score"] == 75
+    assert submitted.data["review"][0]["aiScore"] == 1.5
+    assert submitted.data["review"][0]["aiFeedback"] == "Bonne explication."
+
+
+@pytest.mark.django_db
 def test_student_quiz_payload_never_contains_answer_key(course, teacher, student):
     teacher_client = APIClient()
     teacher_client.force_authenticate(teacher)

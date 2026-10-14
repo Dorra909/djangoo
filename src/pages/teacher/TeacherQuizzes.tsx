@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit, Trash2, Eye, BarChart2 } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { quizzesApi } from '../../api/quizzesApi';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -10,21 +10,35 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../context/AuthContext';
 import type { Quiz } from '../../types';
+import type { QuizDraft } from '../../api/quizzesApi';
 import { QuizForm } from './QuizForm';
 import { QuizResults } from './QuizResults';
+import { apiErrorMessage } from '../../api/client';
 
 export function TeacherQuizzes() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Quiz | null>(null);
+  const [draft, setDraft] = useState<QuizDraft | null>(null);
   const [deleting, setDeleting] = useState<Quiz | null>(null);
   const [resultsQuiz, setResultsQuiz] = useState<Quiz | null>(null);
 
-  const { data: quizzes = [], isLoading } = useQuery({ queryKey: ['teacher-quizzes', user?.id], queryFn: () => quizzesApi.getByTeacher(user!.id) });
-  const deleteMut = useMutation({ mutationFn: (id: number) => quizzesApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teacher-quizzes'] }); toast('success', 'Quiz supprimé'); setDeleting(null); } });
+  const { data: quizzes = [], isLoading, error } = useQuery({ queryKey: ['teacher-quizzes', user?.id], queryFn: () => quizzesApi.getByTeacher(user!.id) });
+  const deleteMut = useMutation({ mutationFn: (id: number) => quizzesApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teacher-quizzes'] }); toast('success', 'Quiz supprimé'); setDeleting(null); }, onError: error => toast('error', apiErrorMessage(error)) });
+
+  useEffect(() => {
+    const navigationDraft = (location.state as { quizDraft?: QuizDraft } | null)?.quizDraft;
+    if (navigationDraft) {
+      setDraft(navigationDraft);
+      setEditing(null);
+      setModalOpen(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   return (
     <div className="space-y-6">
@@ -38,7 +52,9 @@ export function TeacherQuizzes() {
         </button>
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger vos quiz.</div>
+      ) : isLoading ? (
         <div className="space-y-3">{Array.from({length:3}).map((_,i) => <div key={i} className="h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
       ) : quizzes.length === 0 ? (
         <EmptyState icon={Plus} title="Aucun quiz" description="Créez votre premier quiz pour évaluer vos étudiants." action={<button onClick={() => setModalOpen(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl">Créer un quiz</button>} />
@@ -70,18 +86,24 @@ export function TeacherQuizzes() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditing(null); }} title={editing ? 'Modifier le quiz' : 'Créer un quiz'} size="xl">
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditing(null); setDraft(null); }} title={editing ? 'Modifier le quiz' : 'Créer un quiz'} size="xl">
         <QuizForm
           initial={editing}
+          initialDraft={draft}
           teacherId={user!.id}
           onSuccess={async (data) => {
-            if (editing) await quizzesApi.update(editing.id, { ...data, teacherId: user!.id });
-            else await quizzesApi.create({ ...data, teacherId: user!.id });
-            qc.invalidateQueries({ queryKey: ['teacher-quizzes'] });
-            toast('success', editing ? 'Quiz modifié' : 'Quiz créé');
-            setModalOpen(false); setEditing(null);
+            try {
+              if (editing) await quizzesApi.update(editing.id, data);
+              else await quizzesApi.create(data);
+              qc.invalidateQueries({ queryKey: ['teacher-quizzes'] });
+              qc.invalidateQueries({ queryKey: ['teacher-dashboard'] });
+              toast('success', editing ? 'Quiz modifié' : 'Quiz créé');
+              setModalOpen(false); setEditing(null); setDraft(null);
+            } catch (error) {
+              toast('error', apiErrorMessage(error));
+            }
           }}
-          onCancel={() => { setModalOpen(false); setEditing(null); }}
+          onCancel={() => { setModalOpen(false); setEditing(null); setDraft(null); }}
         />
       </Modal>
 

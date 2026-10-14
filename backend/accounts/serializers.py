@@ -30,6 +30,11 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "role", "isActive", "createdAt")
 
+    def validate_avatar(self, upload):
+        from core.validators import validate_avatar
+
+        return validate_avatar(upload)
+
 
 class RegistrationSerializer(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name")

@@ -6,6 +6,7 @@ from quizzes.views import (
     QuizViewSet,
     SubmitAttemptView,
     TeacherAttemptsView,
+    QuizGenerationView,
 )
 
 
@@ -13,6 +14,7 @@ router = DefaultRouter()
 router.register("", QuizViewSet, basename="quiz")
 
 urlpatterns = [
+    path("generate/", QuizGenerationView.as_view(), name="quiz-generate"),
     path("attempts/mine/", MyAttemptsView.as_view(), name="my-attempts"),
     path("attempts/teacher/", TeacherAttemptsView.as_view(), name="teacher-attempts"),
     path(

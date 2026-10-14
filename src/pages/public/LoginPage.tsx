@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { GraduationCap, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { apiErrorMessage } from '../../api/client';
 
 const schema = z.object({
   email: z.string().email('Email invalide'),
@@ -31,7 +32,7 @@ export function LoginPage() {
     try {
       await login(data.email, data.password);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erreur de connexion');
+      setError(apiErrorMessage(e, 'Erreur de connexion'));
     }
   };
 

@@ -11,6 +11,7 @@ import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../context/AuthContext';
 import type { Course } from '../../types';
 import { CourseForm } from './CourseForm';
+import { apiErrorMessage } from '../../api/client';
 
 export function TeacherCourses() {
   const { user } = useAuth();
@@ -22,8 +23,8 @@ export function TeacherCourses() {
   const [editing, setEditing] = useState<Course | null>(null);
   const [deleting, setDeleting] = useState<Course | null>(null);
 
-  const { data: courses = [], isLoading } = useQuery({ queryKey: ['teacher-courses', user?.id], queryFn: () => coursesApi.getByTeacher(user!.id) });
-  const deleteMut = useMutation({ mutationFn: (id: number) => coursesApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teacher-courses'] }); toast('success', 'Cours supprimé'); setDeleting(null); } });
+  const { data: courses = [], isLoading, error } = useQuery({ queryKey: ['teacher-courses', user?.id], queryFn: () => coursesApi.getByTeacher(user!.id) });
+  const deleteMut = useMutation({ mutationFn: (id: number) => coursesApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teacher-courses'] }); toast('success', 'Cours supprimé'); setDeleting(null); }, onError: error => toast('error', apiErrorMessage(error)) });
 
   const filtered = courses.filter(c => c.title.toLowerCase().includes(search.toLowerCase()) || c.category.toLowerCase().includes(search.toLowerCase()));
 
@@ -44,7 +45,9 @@ export function TeacherCourses() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un cours..." className="w-full pl-9 pr-3 py-2.5 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white placeholder-slate-400" />
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger vos cours.</div>
+      ) : isLoading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {Array.from({length:3}).map((_,i) => <div key={i} className="h-64 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />)}
         </div>
@@ -78,16 +81,17 @@ export function TeacherCourses() {
       <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditing(null); }} title={editing ? 'Modifier le cours' : 'Créer un cours'} size="lg">
         <CourseForm
           initial={editing}
-          onSuccess={(course) => {
-            if (editing) {
-              coursesApi.update(editing.id, { ...course, teacherId: user!.id, teacherName: user!.fullName });
-            } else {
-              coursesApi.create({ ...course, teacherId: user!.id, teacherName: user!.fullName });
-            }
-            qc.invalidateQueries({ queryKey: ['teacher-courses'] });
-            toast('success', editing ? 'Cours modifié' : 'Cours créé');
-            setModalOpen(false);
-            setEditing(null);
+          onSuccess={course => {
+            const save = editing
+              ? coursesApi.update(editing.id, course)
+              : coursesApi.create(course);
+            void save.then(() => {
+              qc.invalidateQueries({ queryKey: ['teacher-courses'] });
+              qc.invalidateQueries({ queryKey: ['teacher-dashboard'] });
+              toast('success', editing ? 'Cours modifié' : 'Cours créé');
+              setModalOpen(false);
+              setEditing(null);
+            }).catch(error => toast('error', apiErrorMessage(error)));
           }}
           onCancel={() => { setModalOpen(false); setEditing(null); }}
         />

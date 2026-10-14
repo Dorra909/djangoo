@@ -1,21 +1,16 @@
-import { mockProgress } from '../mocks/data';
+import { apiClient, asArray } from './client';
 import type { Progress } from '../types';
-
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-let progressData = [...mockProgress];
 
 export const progressApi = {
   async getByStudent(_studentId: number): Promise<Progress[]> {
-    await delay(400);
-    return [...progressData];
+    const { data } = await apiClient.get<Progress[] | { results: Progress[] }>('/progress/mine/');
+    return asArray(data);
   },
-  async markLessonComplete(courseId: number, _lessonId: number): Promise<Progress> {
-    await delay(300);
-    progressData = progressData.map(p => {
-      if (p.courseId !== courseId) return p;
-      const completed = Math.min(p.completedLessons + 1, p.totalLessons);
-      return { ...p, completedLessons: completed, percentage: Math.round((completed / p.totalLessons) * 100), lastAccessed: new Date().toISOString() };
-    });
-    return progressData.find(p => p.courseId === courseId)!;
+
+  async markLessonComplete(courseId: number, lessonId: number): Promise<Progress> {
+    const { data } = await apiClient.post<Progress>(
+      `/courses/${courseId}/lessons/${lessonId}/complete/`,
+    );
+    return data;
   },
 };

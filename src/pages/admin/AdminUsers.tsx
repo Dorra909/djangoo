@@ -11,11 +11,14 @@ import type { User } from '../../types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { apiErrorMessage } from '../../api/client';
+import type { CreateUser } from '../../api/usersApi';
 
 const userSchema = z.object({
   fullName: z.string().min(2, 'Nom requis'),
   email: z.string().email('Email invalide'),
   role: z.enum(['ENSEIGNANT', 'ETUDIANT']),
+  password: z.string().optional(),
 });
 type UserForm = z.infer<typeof userSchema>;
 
@@ -29,25 +32,30 @@ export function AdminUsers() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: usersApi.getAll });
+  const { data: users = [], isLoading, error } = useQuery({ queryKey: ['users'], queryFn: usersApi.getAll });
   const filtered = users.filter(u => u.role === tab);
 
-  const createMut = useMutation({ mutationFn: usersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Utilisateur créé'); setModalOpen(false); } });
-  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: number; data: Partial<User> }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Modifié'); setModalOpen(false); setEditing(null); } });
-  const deleteMut = useMutation({ mutationFn: (id: number) => usersApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Supprimé'); setDeleting(null); } });
-  const toggleMut = useMutation({ mutationFn: (id: number) => usersApi.toggleActive(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) });
+  const createMut = useMutation({ mutationFn: usersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Utilisateur créé'); setModalOpen(false); }, onError: error => toast('error', apiErrorMessage(error)) });
+  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: number; data: Partial<User> }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Modifié'); setModalOpen(false); setEditing(null); }, onError: error => toast('error', apiErrorMessage(error)) });
+  const deleteMut = useMutation({ mutationFn: (id: number) => usersApi.delete(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('success', 'Supprimé'); setDeleting(null); }, onError: error => toast('error', apiErrorMessage(error)) });
+  const toggleMut = useMutation({ mutationFn: (user: User) => usersApi.toggleActive(user.id, !user.isActive), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }), onError: error => toast('error', apiErrorMessage(error)) });
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<UserForm>({
+  const { register, handleSubmit, reset, setError, formState: { errors, isSubmitting } } = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: { role: tab },
   });
 
-  const openCreate = () => { setEditing(null); reset({ role: tab, fullName: '', email: '' }); setModalOpen(true); };
-  const openEdit = (u: User) => { setEditing(u); reset({ fullName: u.fullName, email: u.email, role: u.role as 'ENSEIGNANT' | 'ETUDIANT' }); setModalOpen(true); };
+  const openCreate = () => { setEditing(null); reset({ role: tab, fullName: '', email: '', password: '' }); setModalOpen(true); };
+  const openEdit = (u: User) => { setEditing(u); reset({ fullName: u.fullName, email: u.email, role: u.role as 'ENSEIGNANT' | 'ETUDIANT', password: '' }); setModalOpen(true); };
 
   const onSubmit = (data: UserForm) => {
-    if (editing) updateMut.mutate({ id: editing.id, data });
-    else createMut.mutate(data as Partial<User>);
+    const { password, ...userData } = data;
+    if (editing) updateMut.mutate({ id: editing.id, data: userData });
+    else if (!data.password || data.password.length < 8) {
+      setError('password', { message: 'Mot de passe requis (8 caractères minimum)' });
+    } else {
+      createMut.mutate({ ...userData, password } as CreateUser);
+    }
   };
 
   const columns: Column<Record<string, unknown>>[] = [
@@ -82,6 +90,7 @@ export function AdminUsers() {
         ))}
       </div>
 
+      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger les utilisateurs.</div>}
       <DataTable
         data={filtered as unknown as Record<string, unknown>[]}
         columns={columns}
@@ -90,7 +99,7 @@ export function AdminUsers() {
         searchPlaceholder="Rechercher..."
         actions={row => (
           <div className="flex items-center gap-1 justify-end">
-            <button onClick={() => toggleMut.mutate(Number(row.id))} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <button onClick={() => toggleMut.mutate(row as unknown as User)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
               {row.isActive ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
             </button>
             <button onClick={() => openEdit(row as unknown as User)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -108,6 +117,7 @@ export function AdminUsers() {
           {[
             { name: 'fullName' as const, label: 'Nom complet', type: 'text' },
             { name: 'email' as const, label: 'Email', type: 'email' },
+            ...(!editing ? [{ name: 'password' as const, label: 'Mot de passe', type: 'password' }] : []),
           ].map(f => (
             <div key={f.name}>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">{f.label}</label>

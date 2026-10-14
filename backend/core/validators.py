@@ -32,3 +32,9 @@ def validate_attachment(upload):
     if not header.startswith(signature):
         raise serializers.ValidationError("Attachment file content is invalid.")
     return upload
+
+
+def validate_avatar(upload):
+    if upload and not upload.name.lower().endswith((".jpg", ".jpeg", ".png")):
+        raise serializers.ValidationError("Profile photos must be JPEG or PNG images.")
+    return validate_attachment(upload) if upload else upload

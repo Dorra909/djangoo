@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { GraduationCap, Loader2 } from 'lucide-react';
 import { authApi } from '../../api/authApi';
 import { useToast } from '../../components/ui/Toast';
+import { apiErrorMessage } from '../../api/client';
 
 const schema = z.object({
   fullName: z.string().min(2, 'Nom complet requis (min 2 caractères)'),
@@ -34,7 +35,7 @@ export function RegisterPage() {
       toast('success', 'Compte créé avec succès !');
       navigate('/login');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erreur lors de l\'inscription');
+      setError(apiErrorMessage(e, 'Erreur lors de l\'inscription'));
     }
   };
 

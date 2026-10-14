@@ -55,10 +55,14 @@ export interface Course {
 export interface Question {
   id: number;
   text: string;
-  type: 'multiple_choice' | 'true_false';
+  type: 'multiple_choice' | 'true_false' | 'short_answer';
   options: string[];
-  correctAnswer: number;
+  correctAnswer?: number;
   explanation?: string;
+  points?: number;
+  modelAnswer?: string;
+  rubric?: string;
+  source?: { documentId: number; page: number; title?: string } | null;
 }
 
 export interface Quiz {
@@ -72,6 +76,8 @@ export interface Quiz {
   questions: Question[];
   attemptCount: number;
   createdAt: string;
+  creationMode?: 'MANUAL' | 'AI' | 'RAG';
+  gradingMode?: 'AUTO' | 'AI' | 'MANUAL';
 }
 
 export interface QuizAttempt {
@@ -85,6 +91,7 @@ export interface QuizAttempt {
   answers: number[];
   completedAt: string;
   timeTaken: number;
+  needsReview?: boolean;
 }
 
 export interface Complaint {
@@ -108,14 +115,30 @@ export interface Progress {
   completedLessons: number;
   totalLessons: number;
   percentage: number;
-  lastAccessed: string;
+  lastAccessed: string | null;
 }
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  sources?: { documentId: number; title: string; page: number; courseTitle: string }[];
   timestamp: string;
+}
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  courseId?: number | null;
+}
+
+export interface StartedQuizAttempt {
+  id: number;
+  quizId: number;
+  startedAt: string;
+  questions: Question[];
 }
 
 export interface Notification {

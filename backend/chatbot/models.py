@@ -1,12 +1,21 @@
 from django.conf import settings
 from django.db import models
 
+from courses.models import Course
+
 
 class ChatSession(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="chat_sessions",
+    )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.SET_NULL,
+        related_name="chat_sessions",
+        blank=True,
+        null=True,
     )
     title = models.CharField(max_length=200, default="Nouvelle conversation")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -31,6 +40,7 @@ class ChatMessage(models.Model):
     )
     role = models.CharField(max_length=12, choices=Role.choices)
     content = models.TextField()
+    sources = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

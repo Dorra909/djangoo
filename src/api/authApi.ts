@@ -1,30 +1,58 @@
-import { mockUsers } from '../mocks/data';
-import type { User, AuthTokens } from '../types';
+import { apiClient } from './client';
+import type { AuthTokens, User } from '../types';
 
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+interface LoginResponse extends AuthTokens {
+  user: User;
+}
 
 export const authApi = {
   async login(email: string, password: string): Promise<{ user: User; tokens: AuthTokens }> {
-    await delay(600);
-    if (password !== 'demo1234') throw new Error('Email ou mot de passe incorrect');
-    const user = mockUsers.find(u => u.email === email);
-    if (!user) throw new Error('Email ou mot de passe incorrect');
-    return {
-      user,
-      tokens: { access: `mock-access-${user.id}`, refresh: `mock-refresh-${user.id}` },
-    };
-    // Real: return apiClient.post('/auth/login/', { email, password }).then(r => r.data);
+    const { data } = await apiClient.post<LoginResponse>('/auth/login/', { email, password });
+    const { access, refresh, user } = data;
+    return { user, tokens: { access, refresh } };
   },
 
-  async register(data: { fullName: string; email: string; password: string; role: 'ENSEIGNANT' | 'ETUDIANT' }): Promise<void> {
-    await delay(600);
-    if (mockUsers.find(u => u.email === data.email)) throw new Error('Cet email est déjà utilisé');
-    // Real: return apiClient.post('/auth/register/', data);
+  async register(data: {
+    fullName: string;
+    email: string;
+    password: string;
+    role: 'ENSEIGNANT' | 'ETUDIANT';
+  }): Promise<User> {
+    const response = await apiClient.post<{ user: User }>('/auth/register/', data);
+    return response.data.user;
   },
 
   async refreshToken(refresh: string): Promise<AuthTokens> {
-    await delay(200);
-    return { access: `mock-access-refreshed`, refresh };
-    // Real: return apiClient.post('/auth/token/refresh/', { refresh }).then(r => r.data);
+    const { data } = await apiClient.post<AuthTokens>('/auth/token/refresh/', { refresh });
+    return data;
+  },
+
+  async me(): Promise<User> {
+    const { data } = await apiClient.get<User>('/auth/me/');
+    return data;
+  },
+
+  async updateProfile(data: Pick<User, 'fullName' | 'email' | 'bio'>): Promise<User> {
+    const response = await apiClient.patch<User>('/auth/me/', data);
+    return response.data;
+  },
+
+  async updateAvatar(file: File): Promise<User> {
+    const payload = new FormData();
+    payload.append('avatar', file);
+    const { data } = await apiClient.patch<User>('/auth/me/', payload, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await apiClient.post('/auth/change-password/', { currentPassword, newPassword });
+  },
+
+  async logout(refresh: string, access: string): Promise<void> {
+    await apiClient.post('/auth/logout/', { refresh }, {
+      headers: { Authorization: `Bearer ${access}` },
+    });
   },
 };

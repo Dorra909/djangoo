@@ -1,29 +1,55 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle, XCircle, Timer, ChevronRight, Trophy } from 'lucide-react';
 import { quizzesApi } from '../../api/quizzesApi';
 import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { Modal } from '../../components/ui/Modal';
-import type { Quiz, QuizAttempt } from '../../types';
+import type { Quiz } from '../../types';
+import type { QuizReview } from '../../api/quizzesApi';
+import { apiErrorMessage } from '../../api/client';
 
 export function StudentQuizzes() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [taking, setTaking] = useState<Quiz | null>(null);
-  const [result, setResult] = useState<QuizAttempt | null>(null);
+  const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [resultQuiz, setResultQuiz] = useState<Quiz | null>(null);
+  const [result, setResult] = useState<QuizReview | null>(null);
 
-  const { data: quizzes = [], isLoading } = useQuery({ queryKey: ['quizzes'], queryFn: quizzesApi.getAll });
-  const { data: attempts = [] } = useQuery({ queryKey: ['my-attempts', user?.id], queryFn: () => quizzesApi.getAttempts(undefined, user!.id) });
+  const { data: quizzes = [], isLoading, error } = useQuery({ queryKey: ['quizzes'], queryFn: quizzesApi.getAll });
+  const { data: attempts = [], error: attemptsError } = useQuery({ queryKey: ['my-attempts', user?.id], queryFn: () => quizzesApi.getAttempts(undefined, user!.id) });
 
-  const submitMut = useMutation({
-    mutationFn: (data: Omit<QuizAttempt, 'id' | 'passed' | 'score'>) => quizzesApi.submitAttempt(data),
-    onSuccess: (attempt) => { setTaking(null); setResult(attempt); toast(attempt.passed ? 'success' : 'warning', attempt.passed ? 'Quiz réussi !' : 'Quiz non réussi'); },
+  const startMut = useMutation({
+    mutationFn: quizzesApi.startAttempt,
+    onSuccess: (started, quizId) => {
+      const quiz = quizzes.find(item => item.id === quizId);
+      if (!quiz) return;
+      setAttemptId(started.id);
+      setResultQuiz(quiz);
+      setTaking({ ...quiz, questions: started.questions });
+    },
+    onError: err => toast('error', apiErrorMessage(err)),
   });
 
-  if (taking) return <QuizPlayer quiz={taking} studentId={user!.id} studentName={user!.fullName} onSubmit={d => submitMut.mutate(d)} onCancel={() => setTaking(null)} />;
+  const submitMut = useMutation({
+    mutationFn: (data: { answers: number[]; timeTaken: number; textAnswers: { questionId: number; textAnswer: string }[] }) => {
+      if (attemptId === null) throw new Error('Aucune tentative active.');
+      return quizzesApi.submitAttempt(attemptId, data.answers, data.timeTaken, data.textAnswers);
+    },
+    onSuccess: attempt => {
+      setTaking(null);
+      setResult(attempt);
+      void qc.invalidateQueries({ queryKey: ['my-attempts', user?.id] });
+      void qc.invalidateQueries({ queryKey: ['student-dashboard'] });
+      toast(attempt.passed ? 'success' : 'warning', attempt.passed ? 'Quiz réussi !' : 'Quiz non réussi');
+    },
+    onError: err => toast('error', apiErrorMessage(err)),
+  });
+
+  if (taking) return <QuizPlayer quiz={taking} onSubmit={data => submitMut.mutate(data)} submitting={submitMut.isPending} onCancel={() => setTaking(null)} />;
 
   return (
     <div className="space-y-6">
@@ -34,6 +60,10 @@ export function StudentQuizzes() {
 
       {isLoading ? (
         <div className="space-y-3">{Array.from({length:3}).map((_,i) => <div key={i} className="h-28 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
+      ) : error || attemptsError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger les quiz ou vos résultats.</div>
+      ) : quizzes.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900">Inscrivez-vous à un cours pour accéder à ses quiz.</div>
       ) : (
         <div className="space-y-4">
           {quizzes.map(q => {
@@ -66,10 +96,11 @@ export function StudentQuizzes() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setTaking(q)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors shrink-0"
+                    onClick={() => startMut.mutate(q.id)}
+                    disabled={startMut.isPending}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-colors shrink-0 disabled:opacity-60"
                   >
-                    {myAttempts.length > 0 ? 'Réessayer' : 'Commencer'} <ChevronRight className="w-4 h-4" />
+                    {startMut.isPending ? 'Chargement...' : myAttempts.length > 0 ? 'Réessayer' : 'Commencer'} <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -78,7 +109,7 @@ export function StudentQuizzes() {
         </div>
       )}
 
-      <Modal open={!!result} onClose={() => setResult(null)} title="Résultat du quiz" size="sm">
+      <Modal open={!!result} onClose={() => setResult(null)} title="Résultat du quiz" size="md">
         {result && (
           <div className="p-5 text-center">
             <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${result.passed ? 'bg-emerald-50 dark:bg-emerald-950' : 'bg-red-50 dark:bg-red-950'}`}>
@@ -87,6 +118,19 @@ export function StudentQuizzes() {
             <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">{result.score}%</h3>
             <p className={`text-sm font-semibold mb-2 ${result.passed ? 'text-emerald-600' : 'text-red-600'}`}>{result.passed ? '🎉 Quiz réussi !' : '😕 Score insuffisant'}</p>
             <p className="text-xs text-slate-500 mb-5">{result.quizTitle}</p>
+            {result.needsReview && <p className="mb-4 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">Certaines réponses sont en attente de relecture par l’enseignant.</p>}
+            <div className="mb-5 space-y-2 text-left">
+              {result.review.map((answer, index) => (
+                <div key={answer.questionId} className={`rounded-lg p-3 text-xs ${answer.needsReview ? 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200' : answer.is_correct ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' : 'bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200'}`}>
+                  <p className="font-semibold">{resultQuiz?.questions[index]?.text}</p>
+                  <p className="mt-1">Votre réponse : {answer.textAnswer || (answer.selectedIndex >= 0 ? resultQuiz?.questions[index]?.options[answer.selectedIndex] : 'Sans réponse')}</p>
+                  {answer.needsReview && <p className="mt-1 font-semibold">En attente de relecture</p>}
+                  {!answer.needsReview && answer.correctIndex >= 0 && <p>Bonne réponse : {resultQuiz?.questions[index]?.options[answer.correctIndex]}</p>}
+                  {answer.aiFeedback && <p className="mt-1">{answer.aiFeedback}</p>}
+                  {answer.explanation && <p className="mt-1">{answer.explanation}</p>}
+                </div>
+              ))}
+            </div>
             <button onClick={() => setResult(null)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors">Fermer</button>
           </div>
         )}
@@ -97,27 +141,32 @@ export function StudentQuizzes() {
 
 interface QuizPlayerProps {
   quiz: Quiz;
-  studentId: number;
-  studentName: string;
-  onSubmit: (data: Omit<QuizAttempt, 'id' | 'passed' | 'score'>) => void;
+  onSubmit: (data: { answers: number[]; textAnswers: { questionId: number; textAnswer: string }[]; timeTaken: number }) => void;
+  submitting: boolean;
   onCancel: () => void;
 }
 
-function QuizPlayer({ quiz, studentId, studentName, onSubmit, onCancel }: QuizPlayerProps) {
+function QuizPlayer({ quiz, onSubmit, submitting, onCancel }: QuizPlayerProps) {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<number[]>(Array(quiz.questions.length).fill(-1));
+  const [textAnswers, setTextAnswers] = useState<Record<number, string>>({});
   const [startTime] = useState(Date.now());
   const [confirming, setConfirming] = useState(false);
 
   const q = quiz.questions[current];
-  const answered = answers.filter(a => a !== -1).length;
+  const answered = quiz.questions.filter((question, index) => (
+    question.type === 'short_answer' ? Boolean(textAnswers[question.id]?.trim()) : answers[index] !== -1
+  )).length;
 
   const handleSubmit = () => {
     const timeTaken = Math.round((Date.now() - startTime) / 60000);
     onSubmit({
-      quizId: quiz.id, quizTitle: quiz.title, studentId, studentName,
-      answers: answers.map(a => a === -1 ? 0 : a),
-      completedAt: new Date().toISOString(), timeTaken,
+      answers: quiz.questions.flatMap((question, index) => question.type === 'short_answer' ? [] : [answers[index]]),
+      textAnswers: quiz.questions.filter(question => question.type === 'short_answer').map(question => ({
+        questionId: question.id,
+        textAnswer: textAnswers[question.id] ?? '',
+      })),
+      timeTaken,
     });
   };
 
@@ -143,7 +192,16 @@ function QuizPlayer({ quiz, studentId, studentName, onSubmit, onCancel }: QuizPl
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <p className="text-base font-semibold text-slate-900 dark:text-white mb-6">{q.text}</p>
-        <div className="space-y-3">
+        {q.type === 'short_answer' ? (
+          <textarea
+            value={textAnswers[q.id] ?? ''}
+            onChange={event => setTextAnswers(currentAnswers => ({ ...currentAnswers, [q.id]: event.target.value }))}
+            rows={6}
+            maxLength={10000}
+            placeholder="Rédigez votre réponse…"
+            className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          />
+        ) : <div className="space-y-3">
           {q.options.map((opt, i) => (
             <button
               key={i}
@@ -156,7 +214,7 @@ function QuizPlayer({ quiz, studentId, studentName, onSubmit, onCancel }: QuizPl
               {opt}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       <div className="flex gap-3 justify-between">
@@ -181,7 +239,7 @@ function QuizPlayer({ quiz, studentId, studentName, onSubmit, onCancel }: QuizPl
             <p className="text-xs text-slate-500 mb-5">Vous avez répondu à {answered} questions sur {quiz.questions.length}. Confirmez-vous la soumission ?</p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setConfirming(false)} className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200">Annuler</button>
-              <button onClick={handleSubmit} className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl">Confirmer</button>
+              <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-60">Confirmer</button>
             </div>
           </div>
         </div>

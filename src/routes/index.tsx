@@ -10,6 +10,7 @@ import { AdminUsers } from '../pages/admin/AdminUsers';
 import { AdminComplaints } from '../pages/admin/AdminComplaints';
 import { TeacherDashboard } from '../pages/teacher/TeacherDashboard';
 import { TeacherCourses } from '../pages/teacher/TeacherCourses';
+import { TeacherCourseDetail } from '../pages/teacher/TeacherCourseDetail';
 import { TeacherQuizzes } from '../pages/teacher/TeacherQuizzes';
 import { TeacherChatbot } from '../pages/teacher/TeacherChatbot';
 import { TeacherComplaints } from '../pages/teacher/TeacherComplaints';
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
             children: [
               { path: '/teacher/dashboard', element: <TeacherDashboard /> },
               { path: '/teacher/courses', element: <TeacherCourses /> },
+              { path: '/teacher/courses/:id', element: <TeacherCourseDetail /> },
               { path: '/teacher/quizzes', element: <TeacherQuizzes /> },
               { path: '/teacher/chatbot', element: <TeacherChatbot /> },
               { path: '/teacher/complaints', element: <TeacherComplaints /> },

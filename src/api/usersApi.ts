@@ -1,39 +1,37 @@
-import { mockUsers } from '../mocks/data';
+import { apiClient, asArray } from './client';
 import type { User } from '../types';
 
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-let users = [...mockUsers];
+export interface CreateUser extends Pick<User, 'fullName' | 'email' | 'role'> {
+  password: string;
+}
 
 export const usersApi = {
   async getAll(): Promise<User[]> {
-    await delay(400);
-    return [...users];
-    // Real: return apiClient.get('/users/').then(r => r.data);
+    const { data } = await apiClient.get<User[] | { results: User[] }>('/users/');
+    return asArray(data);
   },
+
   async getById(id: number): Promise<User> {
-    await delay(300);
-    const u = users.find(u => u.id === id);
-    if (!u) throw new Error('Utilisateur non trouvé');
-    return u;
+    const { data } = await apiClient.get<User>(`/users/${id}/`);
+    return data;
   },
-  async create(data: Partial<User>): Promise<User> {
-    await delay(500);
-    const newUser: User = { id: Date.now(), isActive: true, createdAt: new Date().toISOString(), role: 'ETUDIANT', fullName: '', email: '', ...data } as User;
-    users.push(newUser);
-    return newUser;
+
+  async create(data: CreateUser): Promise<User> {
+    const { data: user } = await apiClient.post<User>('/users/', data);
+    return user;
   },
+
   async update(id: number, data: Partial<User>): Promise<User> {
-    await delay(400);
-    users = users.map(u => u.id === id ? { ...u, ...data } : u);
-    return users.find(u => u.id === id)!;
+    const { data: user } = await apiClient.patch<User>(`/users/${id}/`, data);
+    return user;
   },
+
   async delete(id: number): Promise<void> {
-    await delay(400);
-    users = users.filter(u => u.id !== id);
+    await apiClient.delete(`/users/${id}/`);
   },
-  async toggleActive(id: number): Promise<User> {
-    await delay(300);
-    users = users.map(u => u.id === id ? { ...u, isActive: !u.isActive } : u);
-    return users.find(u => u.id === id)!;
+
+  async toggleActive(id: number, isActive: boolean): Promise<User> {
+    const { data } = await apiClient.patch<User>(`/users/${id}/active/`, { isActive });
+    return data;
   },
 };

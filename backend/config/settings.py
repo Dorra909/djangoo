@@ -8,7 +8,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
-    CORS_ALLOWED_ORIGINS=(list, ["http://localhost:5173"]),
+    CORS_ALLOWED_ORIGINS=(
+        list,
+        [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8443",
+            "http://127.0.0.1:8443",
+        ],
+    ),
 )
 environ.Env.read_env(BASE_DIR / ".env", overwrite=False)
 
@@ -41,6 +49,7 @@ INSTALLED_APPS = [
     "progress",
     "complaints",
     "chatbot",
+    "rag",
     "dashboard",
     "core",
 ]
@@ -74,12 +83,35 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-    )
-}
+if env("DATABASE_ENGINE", default="").lower() == "sqlserver":
+    DATABASES = {
+        "default": {
+            "ENGINE": "mssql",
+            "NAME": env("DATABASE_NAME", default="EduLearnDB"),
+            "HOST": env(
+                "DATABASE_HOST",
+                default="DESKTOP-4V3M1LD\\SQLEXPRESS",
+            ),
+            "PORT": "",
+            "USER": "",
+            "PASSWORD": "",
+            "Trusted_Connection": "yes",
+            "OPTIONS": {
+                "driver": env(
+                    "ODBC_DRIVER",
+                    default="ODBC Driver 18 for SQL Server",
+                ),
+                "extra_params": "TrustServerCertificate=yes",
+            },
+        }
+    }
+else:
+    DATABASES = {
+        "default": env.db(
+            "DATABASE_URL",
+            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        )
+    }
 if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
     DATABASES["default"]["OPTIONS"] = {"timeout": 20}
 
@@ -99,12 +131,17 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_CREDENTIALS = True
-LLM_API_KEY = env("LLM_API_KEY", default="")
-LLM_API_URL = env(
-    "LLM_API_URL",
-    default="https://api.openai.com/v1/chat/completions",
+GROQ_API_KEY = env("GROQ_API_KEY", default="")
+GROQ_MODEL = env("GROQ_MODEL", default="qwen/qwen3.8-27b")
+GROQ_TIMEOUT = env.float("GROQ_TIMEOUT", default=30.0)
+RAG_EMBEDDING_MODEL = env(
+    "RAG_EMBEDDING_MODEL",
+    default="paraphrase-multilingual-MiniLM-L12-v2",
 )
-LLM_MODEL = env("LLM_MODEL", default="gpt-4o-mini")
+RAG_VECTORSTORE_PATH = env(
+    "RAG_VECTORSTORE_PATH",
+    default=str(MEDIA_ROOT / "vectorstore"),
+)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -124,7 +161,8 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
-        "chatbot": "20/minute",
+        "ai": "10/minute",
+        "chatbot": "10/minute",
     },
 }
 
@@ -145,5 +183,6 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "UserRoleEnum": "accounts.models.User.Role",
         "ChatMessageRoleEnum": "chatbot.models.ChatMessage.Role",
+        "QuestionTypeEnum": "quizzes.models.Question.Type",
     },
 }

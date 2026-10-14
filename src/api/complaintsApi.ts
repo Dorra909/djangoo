@@ -1,28 +1,48 @@
-import { mockComplaints } from '../mocks/data';
+import { apiClient, asArray } from './client';
 import type { Complaint } from '../types';
 
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-let complaints = [...mockComplaints];
+export interface ComplaintCreate {
+  subject: string;
+  category: string;
+  message: string;
+  attachment?: File;
+}
 
 export const complaintsApi = {
-  async getAll(): Promise<Complaint[]> {
-    await delay(400);
-    return [...complaints];
+  async getAll(status?: Complaint['status']): Promise<Complaint[]> {
+    const params = status ? { status } : undefined;
+    const { data } = await apiClient.get<Complaint[] | { results: Complaint[] }>('/complaints/', {
+      params,
+    });
+    return asArray(data);
   },
-  async getByAuthor(authorId: number): Promise<Complaint[]> {
-    await delay(400);
-    return complaints.filter(c => c.authorId === authorId);
+
+  async getByAuthor(_authorId: number): Promise<Complaint[]> {
+    const { data } = await apiClient.get<Complaint[] | { results: Complaint[] }>('/complaints/');
+    return asArray(data);
   },
-  async create(data: Omit<Complaint, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<Complaint> {
-    await delay(600);
-    const now = new Date().toISOString();
-    const newComplaint: Complaint = { ...data, id: Date.now(), status: 'Open', createdAt: now, updatedAt: now };
-    complaints.push(newComplaint);
-    return newComplaint;
+
+  async create(data: ComplaintCreate): Promise<Complaint> {
+    const payload = new FormData();
+    payload.append('subject', data.subject);
+    payload.append('category', data.category);
+    payload.append('message', data.message);
+    if (data.attachment) payload.append('attachment', data.attachment);
+    const { data: complaint } = await apiClient.post<Complaint>('/complaints/', payload, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return complaint;
   },
-  async updateStatus(id: number, status: Complaint['status'], adminReply?: string): Promise<Complaint> {
-    await delay(400);
-    complaints = complaints.map(c => c.id === id ? { ...c, status, adminReply: adminReply ?? c.adminReply, updatedAt: new Date().toISOString() } : c);
-    return complaints.find(c => c.id === id)!;
+
+  async updateStatus(
+    id: number,
+    status: Complaint['status'],
+    adminReply?: string,
+  ): Promise<Complaint> {
+    const { data } = await apiClient.patch<Complaint>(`/complaints/${id}/`, {
+      status,
+      adminReply,
+    });
+    return data;
   },
 };

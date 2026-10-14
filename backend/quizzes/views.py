@@ -12,6 +12,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from drf_spectacular.utils import extend_schema
 
 from accounts.models import User
@@ -24,9 +25,17 @@ from quizzes.serializers import (
     AttemptReviewSerializer,
     AttemptStartSerializer,
     AttemptSubmitSerializer,
+    TeacherAnswerOverrideSerializer,
     QuizReadSerializer,
     QuizWriteSerializer,
 )
+from quizzes.generation import (
+    QuizGenerationRequestSerializer,
+    generate_quiz_draft,
+)
+from quizzes.models import AttemptAnswer
+from quizzes.serializers import AttemptReviewAnswerSerializer
+from quizzes.grading import recalculate_attempt
 
 
 class IsQuizOwnerOrAdmin(IsOwnerOrAdmin):
@@ -193,6 +202,38 @@ class QuizViewSet(viewsets.ModelViewSet):
         )
         return response
 
+    @action(detail=True, methods=["get"], url_path="attempts/pending")
+    def pending_attempts(self, request, pk=None):
+        quiz = self.get_object()
+        if request.user.role != User.Role.TEACHER:
+            raise PermissionDenied("Only the quiz teacher can review pending answers.")
+        answers = (
+            AttemptAnswer.objects.filter(
+                attempt__quiz=quiz,
+                attempt__completed_at__isnull=False,
+                needs_review=True,
+            )
+            .select_related("attempt__student", "question")
+            .prefetch_related("question__choices")
+        )
+        return Response(
+            [
+                {
+                    "attemptId": answer.attempt_id,
+                    "answerId": answer.id,
+                    "studentName": answer.attempt.student.full_name,
+                    "answer": AttemptReviewAnswerSerializer(answer).data,
+                    "question": {
+                        "text": answer.question.text,
+                        "points": answer.question.points,
+                        "modelAnswer": answer.question.model_answer,
+                        "rubric": answer.question.rubric,
+                    },
+                }
+                for answer in answers
+            ]
+        )
+
 
 class MyAttemptsView(APIView):
     permission_classes = [IsAuthenticated, IsStudent]
@@ -274,3 +315,79 @@ class SubmitAttemptView(APIView):
                 context={"request": request},
             ).data
         )
+
+
+class QuizGenerationView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacher]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ai"
+
+    @extend_schema(
+        request=QuizGenerationRequestSerializer,
+        responses={200: None},
+    )
+    def post(self, request):
+        serializer = QuizGenerationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        draft, is_mock = generate_quiz_draft(request, serializer.validated_data)
+        course_id = serializer.validated_data.get("course_id")
+        if course_id is None and serializer.validated_data.get("lesson_ids"):
+            from courses.models import Lesson
+
+            course_id = Lesson.objects.filter(
+                pk=serializer.validated_data["lesson_ids"][0]
+            ).values_list("course_id", flat=True).first()
+        result = {
+            "title": draft["title"],
+            "courseId": course_id,
+            "creationMode": (
+                Quiz.CreationMode.RAG
+                if serializer.validated_data.get("document_ids")
+                else Quiz.CreationMode.AI
+            ),
+            "questions": draft["questions"],
+            "mock": is_mock,
+        }
+        return Response({"draft": result})
+
+
+class TeacherAnswerOverrideView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        request=TeacherAnswerOverrideSerializer,
+        responses={200: AttemptReviewAnswerSerializer},
+    )
+    @transaction.atomic
+    def patch(self, request, attempt_id, answer_id):
+        answer = get_object_or_404(
+            AttemptAnswer.objects.select_for_update().select_related(
+                "attempt__quiz",
+                "question",
+                "selected_choice",
+            ),
+            pk=answer_id,
+            attempt_id=attempt_id,
+            attempt__quiz__teacher=request.user,
+            attempt__completed_at__isnull=False,
+        )
+        serializer = TeacherAnswerOverrideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        score = serializer.validated_data["score"]
+        if score > answer.question.points:
+            return Response(
+                {
+                    "detail": "La note ne peut pas dépasser les points de la question.",
+                    "errors": {"score": ["La note dépasse le maximum autorisé."]},
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        answer.teacher_override_score = score
+        answer.needs_review = False
+        if "feedback" in serializer.validated_data:
+            answer.ai_feedback = serializer.validated_data["feedback"]
+        answer.save(
+            update_fields=("teacher_override_score", "needs_review", "ai_feedback")
+        )
+        recalculate_attempt(answer.attempt)
+        return Response(AttemptReviewAnswerSerializer(answer).data)

@@ -3,16 +3,24 @@ import { Users, BookOpen, FileQuestion, AlertCircle, UserCheck, UserX } from 'lu
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { CardSkeleton } from '../../components/ui/Skeleton';
-import { mockDashboardStats } from '../../mocks/data';
-import { mockComplaints } from '../../mocks/data';
+import { dashboardApi } from '../../api/dashboardApi';
+import { apiErrorMessage } from '../../api/client';
+import { useToast } from '../../components/ui/Toast';
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B'];
 
 export function AdminDashboard() {
-  const { data: stats, isLoading } = useQuery({ queryKey: ['admin-stats'], queryFn: async () => { await new Promise(r => setTimeout(r, 500)); return mockDashboardStats; } });
-  const recentComplaints = mockComplaints.slice(0, 5);
+  const { toast } = useToast();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-dashboard'],
+    queryFn: dashboardApi.getAdmin,
+    meta: { onError: (queryError: unknown) => toast('error', apiErrorMessage(queryError)) },
+  });
+  const stats = data?.stats;
+  const recentComplaints = data?.recentComplaints || [];
 
   if (isLoading) return <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({length:6}).map((_,i) => <CardSkeleton key={i} />)}</div>;
+  if (error || !stats) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger le tableau de bord.</div>;
 
   return (
     <div className="space-y-6">

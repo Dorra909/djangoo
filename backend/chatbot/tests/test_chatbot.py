@@ -1,11 +1,10 @@
-import json
-
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from chatbot.models import ChatMessage, ChatSession
 from chatbot.services import LLMService
+from courses.models import Course, Enrollment
 
 
 User = get_user_model()
@@ -15,7 +14,7 @@ User = get_user_model()
 def teacher(db):
     return User.objects.create_user(
         email="chat.teacher@example.com",
-        password="Strong-pass-123!",
+        password="test-password-123",
         full_name="Chat Teacher",
         role=User.Role.TEACHER,
     )
@@ -25,15 +24,27 @@ def teacher(db):
 def student(db):
     return User.objects.create_user(
         email="chat.student@example.com",
-        password="Strong-pass-123!",
+        password="test-password-123",
         full_name="Chat Student",
         role=User.Role.STUDENT,
     )
 
 
+@pytest.fixture
+def course(teacher):
+    return Course.objects.create(
+        teacher=teacher,
+        title="Chat course",
+        description="A course for grounded assistant tests.",
+        category="Development",
+        level=Course.Level.BEGINNER,
+        is_published=True,
+    )
+
+
 @pytest.mark.django_db
 def test_chat_session_persists_user_and_mock_assistant_messages(teacher, settings):
-    settings.LLM_API_KEY = ""
+    settings.GROQ_API_KEY = ""
     client = APIClient()
     client.force_authenticate(teacher)
 
@@ -51,12 +62,74 @@ def test_chat_session_persists_user_and_mock_assistant_messages(teacher, setting
     assert sent.data["userMessage"]["role"] == "user"
     assert sent.data["userMessage"]["content"] == "Explique les hooks React."
     assert sent.data["assistantMessage"]["role"] == "assistant"
-    assert sent.data["assistantMessage"]["content"]
+    assert "Réponse simulée" in sent.data["assistantMessage"]["content"]
     assert isinstance(sent.data["userMessage"]["id"], str)
     assert history.status_code == 200
     assert [message["role"] for message in history.data] == ["user", "assistant"]
     assert ChatMessage.objects.filter(session_id=session_id).count() == 2
     assert ChatSession.objects.get(id=session_id).title == "Explique les hooks React."
+
+
+@pytest.mark.django_db
+def test_chatbot_message_requires_student_course_enrollment(course, student):
+    client = APIClient()
+    client.force_authenticate(student)
+
+    response = client.post(
+        "/api/chatbot/message/",
+        {"course_id": course.id, "message": "Résume le chapitre."},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert ChatSession.objects.filter(user=student).count() == 0
+
+
+@pytest.mark.django_db
+def test_enrolled_student_chat_response_cites_course_sources(
+    course,
+    student,
+    monkeypatch,
+):
+    Enrollment.objects.create(student=student, course=course)
+    source = {
+        "document_id": 42,
+        "document_title": "Chapitre 1",
+        "page_number": 3,
+        "chunk_index": 0,
+        "content": "Les variables stockent des valeurs.",
+        "score": 0.9,
+    }
+    monkeypatch.setattr("chatbot.services.retrieve", lambda *args, **kwargs: [source])
+
+    class FakeGroq:
+        api_key = "test-key"
+
+        def chat(self, messages, **kwargs):
+            assert "Les variables stockent des valeurs." in messages[1]["content"]
+            return "Une variable stocke une valeur."
+
+    monkeypatch.setattr("chatbot.services.GroqClient", FakeGroq)
+    client = APIClient()
+    client.force_authenticate(student)
+
+    response = client.post(
+        "/api/chatbot/message/",
+        {"course_id": course.id, "message": "À quoi sert une variable ?"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.data["assistantMessage"]["sources"] == [
+        {
+            "documentId": 42,
+            "title": "Chapitre 1",
+            "page": 3,
+            "courseTitle": course.title,
+        }
+    ]
+    assert "page 3" in response.data["assistantMessage"]["content"]
+    assert response.data["session"]["courseId"] == course.id
 
 
 @pytest.mark.django_db
@@ -94,36 +167,17 @@ def test_chat_clear_deletes_only_owned_session_history(teacher):
     assert not ChatMessage.objects.filter(session_id=session.id).exists()
 
 
-def test_llm_service_uses_configured_provider_and_api_key(monkeypatch, settings):
-    settings.LLM_API_KEY = "test-secret"
-    settings.LLM_API_URL = "https://llm.example.test/chat"
-    settings.LLM_MODEL = "test-model"
+def test_llm_service_delegates_to_groq_client(monkeypatch):
     captured = {}
 
-    class FakeResponse:
-        def __enter__(self):
-            return self
+    class FakeGroqClient:
+        def chat(self, messages):
+            captured["messages"] = messages
+            return "Réponse Groq"
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            return False
+    monkeypatch.setattr("chatbot.services.GroqClient", FakeGroqClient)
 
-        def read(self):
-            return json.dumps(
-                {"choices": [{"message": {"content": "Provider response"}}]}
-            ).encode()
-
-    def fake_urlopen(request, timeout):
-        captured["url"] = request.full_url
-        captured["auth"] = request.get_header("Authorization")
-        captured["payload"] = json.loads(request.data)
-        captured["timeout"] = timeout
-        return FakeResponse()
-
-    monkeypatch.setattr("chatbot.services.urlopen", fake_urlopen)
     response = LLMService().reply([{"role": "user", "content": "Hello"}])
 
-    assert response == "Provider response"
-    assert captured["url"] == settings.LLM_API_URL
-    assert captured["auth"] == "Bearer test-secret"
-    assert captured["payload"]["model"] == "test-model"
-    assert captured["timeout"] == 30
+    assert response == "Réponse Groq"
+    assert captured["messages"] == [{"role": "user", "content": "Hello"}]

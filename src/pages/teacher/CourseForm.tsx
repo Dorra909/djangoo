@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
 import type { Course } from '../../types';
+import type { CourseWrite } from '../../api/coursesApi';
 
 const schema = z.object({
   title: z.string().min(3, 'Titre requis'),
@@ -11,6 +12,7 @@ const schema = z.object({
   category: z.string().min(1, 'Catégorie requise'),
   level: z.enum(['Débutant', 'Intermédiaire', 'Avancé']),
   thumbnail: z.string().url('URL invalide').optional().or(z.literal('')),
+  isPublished: z.boolean(),
   lessons: z.array(z.object({
     title: z.string().min(1, 'Titre leçon requis'),
     content: z.string().min(1, 'Contenu requis'),
@@ -22,7 +24,7 @@ type Form = z.infer<typeof schema>;
 
 interface CourseFormProps {
   initial?: Course | null;
-  onSuccess: (data: Partial<Course>) => void;
+  onSuccess: (data: CourseWrite) => void;
   onCancel: () => void;
 }
 
@@ -37,6 +39,7 @@ export function CourseForm({ initial, onSuccess, onCancel }: CourseFormProps) {
       category: initial?.category || '',
       level: initial?.level || 'Débutant',
       thumbnail: initial?.thumbnail || '',
+      isPublished: initial?.isPublished ?? false,
       lessons: initial?.lessons.map(l => ({ title: l.title, content: l.content, videoUrl: l.videoUrl || '' })) || [{ title: '', content: '', videoUrl: '' }],
     },
   });
@@ -46,7 +49,7 @@ export function CourseForm({ initial, onSuccess, onCancel }: CourseFormProps) {
   const onSubmit = (data: Form) => {
     onSuccess({
       ...data,
-      lessons: data.lessons.map((l, i) => ({ id: i + 1, title: l.title, content: l.content, videoUrl: l.videoUrl, order: i + 1 })),
+      lessons: data.lessons.map((l, i) => ({ title: l.title, content: l.content, videoUrl: l.videoUrl, order: i + 1 })),
     });
   };
 
@@ -58,6 +61,10 @@ export function CourseForm({ initial, onSuccess, onCancel }: CourseFormProps) {
           <input {...register('title')} className="w-full px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white" />
           {errors.title && <p className="text-red-500 text-[10px] mt-1">{errors.title.message}</p>}
         </div>
+        <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+          <input {...register('isPublished')} type="checkbox" className="accent-indigo-600" />
+          Publier le cours dans le catalogue étudiant
+        </label>
         <div>
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Catégorie</label>
           <select {...register('category')} className="w-full px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white">

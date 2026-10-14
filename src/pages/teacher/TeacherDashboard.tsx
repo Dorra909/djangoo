@@ -4,21 +4,29 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { StatCard } from '../../components/ui/StatCard';
 import { CardSkeleton } from '../../components/ui/Skeleton';
 import { useAuth } from '../../context/AuthContext';
-import { coursesApi } from '../../api/coursesApi';
-import { quizzesApi } from '../../api/quizzesApi';
+import { dashboardApi } from '../../api/dashboardApi';
+import { apiErrorMessage } from '../../api/client';
+import { useToast } from '../../components/ui/Toast';
 
 export function TeacherDashboard() {
   const { user } = useAuth();
-  const { data: courses = [], isLoading: lc } = useQuery({ queryKey: ['teacher-courses', user?.id], queryFn: () => coursesApi.getByTeacher(user!.id) });
-  const { data: quizzes = [], isLoading: lq } = useQuery({ queryKey: ['teacher-quizzes', user?.id], queryFn: () => quizzesApi.getByTeacher(user!.id) });
-  const { data: attempts = [] } = useQuery({ queryKey: ['all-attempts'], queryFn: () => quizzesApi.getAttempts() });
+  const { toast } = useToast();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['teacher-dashboard'],
+    queryFn: dashboardApi.getTeacher,
+    meta: { onError: (queryError: unknown) => toast('error', apiErrorMessage(queryError)) },
+  });
+  const courses = data?.courses || [];
+  const quizzes = data?.quizzes || [];
+  const attempts = data?.attempts || [];
 
   const totalEnrolled = courses.reduce((a, c) => a + c.enrolledCount, 0);
   const avgScore = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) : 0;
 
   const chartData = courses.map(c => ({ name: c.title.substring(0, 20) + '...', étudiants: c.enrolledCount }));
 
-  if (lc || lq) return <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({length:4}).map((_,i) => <CardSkeleton key={i} />)}</div>;
+  if (isLoading) return <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({length:4}).map((_,i) => <CardSkeleton key={i} />)}</div>;
+  if (error || !data) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger le tableau de bord.</div>;
 
   return (
     <div className="space-y-6">

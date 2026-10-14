@@ -5,16 +5,22 @@ import { useNavigate } from 'react-router';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useAuth } from '../../context/AuthContext';
-import { progressApi } from '../../api/progressApi';
-import { quizzesApi } from '../../api/quizzesApi';
-import { coursesApi } from '../../api/coursesApi';
+import { dashboardApi } from '../../api/dashboardApi';
+import { apiErrorMessage } from '../../api/client';
+import { useToast } from '../../components/ui/Toast';
 
 export function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { data: progress = [] } = useQuery({ queryKey: ['my-progress', user?.id], queryFn: () => progressApi.getByStudent(user!.id) });
-  const { data: attempts = [] } = useQuery({ queryKey: ['my-attempts', user?.id], queryFn: () => quizzesApi.getAttempts(undefined, user!.id) });
-  const { data: courses = [] } = useQuery({ queryKey: ['courses'], queryFn: coursesApi.getAll });
+  const { toast } = useToast();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['student-dashboard'],
+    queryFn: dashboardApi.getStudent,
+    meta: { onError: (queryError: unknown) => toast('error', apiErrorMessage(queryError)) },
+  });
+  const progress = data?.progress || [];
+  const attempts = data?.attempts || [];
+  const courses = data?.courses || [];
 
   const inProgress = progress.filter(p => p.percentage > 0 && p.percentage < 100);
   const avgScore = attempts.length ? Math.round(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) : 0;
@@ -22,6 +28,9 @@ export function StudentDashboard() {
   const quizPassed = attempts.filter(a => a.passed).length;
 
   const scoreHistory = attempts.slice(-6).map((a, i) => ({ attempt: `T${i + 1}`, score: a.score }));
+
+  if (isLoading) return <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 4 }, (_, i) => <div key={i} className="h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>;
+  if (error || !data) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de charger le tableau de bord.</div>;
 
   return (
     <div className="space-y-6">

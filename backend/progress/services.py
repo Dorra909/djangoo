@@ -2,7 +2,7 @@ from django.db import models
 from django.db.models import Count, Max
 
 from courses.models import Enrollment
-from progress.models import LessonProgress
+from progress.models import LessonProgress, Progression
 
 
 def get_student_progress(student):
@@ -31,6 +31,7 @@ def get_student_progress(student):
     for enrollment in enrollments:
         total = enrollment.total_lessons
         completed = enrollment.completed_lessons
+        Progression.actualiser(student, enrollment.course)
         progress.append(
             {
                 "courseId": enrollment.course_id,
@@ -56,6 +57,7 @@ def get_course_progress(student, course):
         .values_list("last_accessed", flat=True)
         .first()
     )
+    Progression.actualiser(student, course)
     return {
         "courseId": course.id,
         "courseTitle": course.title,

@@ -23,3 +23,12 @@
 - [x] Add provider-agnostic LLM integration with a clean no-key fallback and scoped throttling.
 - [x] Add chatbot API/provider tests, create migration, and verify Django checks.
 - [x] Validate OpenAPI schema and commit Phase 6 changes.
+
+## Phase 7 progress
+
+- [x] Add repeatable seeded demo accounts, courses, lessons, quizzes, enrollments, attempts, complaints and notifications.
+- [x] Replace mock-backed frontend APIs with authenticated Django API calls and JWT refresh.
+- [x] Wire profiles, password/avatar changes, enrollment, quiz attempts/review, complaints/uploads, notifications and chatbot history.
+- [x] Add frontend API configuration and document endpoint contracts and local setup.
+- [ ] Run full backend tests, OpenAPI/system checks, frontend typecheck/build, and browser flows for each role.
+- [ ] Commit Phase 7 changes without including pre-existing worktree files.

@@ -6,6 +6,7 @@ from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
 )
+from quizzes.views import SubmitAttemptView, TeacherAnswerOverrideView
 
 
 urlpatterns = [
@@ -14,10 +15,22 @@ urlpatterns = [
     path("api/users/", include("accounts.user_urls")),
     path("api/courses/", include("courses.urls")),
     path("api/quizzes/", include("quizzes.urls")),
+    path(
+        "api/attempts/<int:attempt_id>/answers/<int:answer_id>/override/",
+        TeacherAnswerOverrideView.as_view(),
+        name="attempt-answer-override",
+    ),
+    path(
+        "api/attempts/<int:attempt_id>/submit/",
+        SubmitAttemptView.as_view(),
+        name="submit-attempt",
+    ),
     path("api/progress/", include("progress.urls")),
     path("api/dashboard/", include("dashboard.urls")),
     path("api/complaints/", include("complaints.urls")),
     path("api/chat/", include("chatbot.urls")),
+    path("api/chatbot/", include("chatbot.urls")),
+    path("api/", include("rag.urls")),
     path("api/", include("core.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
